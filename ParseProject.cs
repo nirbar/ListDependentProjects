@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.IO;
 using Microsoft.Build.Evaluation;
+using Microsoft.Build.Construction;
 
 namespace Panel.Software.ListDependentProjects
 {
@@ -414,6 +415,30 @@ namespace Panel.Software.ListDependentProjects
                 }
             } while (changed);
 
+            return true;
+        }
+
+        /// <summary>
+        /// Create a build file that build the projects in the specified order
+        /// </summary>
+        /// <param name="buildFilePath"></param>
+        /// <param name="projectList"></param>
+        /// <returns></returns>
+        public static bool CreateBuildFile(string buildFilePath, List<string> projectList)
+        {
+            ProjectRootElement proj = ProjectRootElement.Create(buildFilePath);
+            proj.AddProperty("Configuration", "Release");
+            proj.AddProperty("Platform", "x86");
+
+
+            ProjectTargetElement trgt = proj.AddTarget("Build");
+            foreach(string p in projectList)
+            {
+                ProjectTaskElement task = trgt.AddTask("MSBuild");
+                task.SetParameter("Projects", p);
+            }
+
+            proj.Save();
             return true;
         }
 

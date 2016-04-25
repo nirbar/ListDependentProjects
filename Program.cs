@@ -68,10 +68,10 @@ namespace Panel.Software.ListDependentProjects
                 ParseProject.SetBuildOrder(dependentProjects);
             }
 
-            // Dump project list, even if error(s) occured.
+            // Dump project file, even if error(s) occured.
             if (!string.IsNullOrWhiteSpace(outFile))
             {
-                File.AppendAllLines(outFile, dependentProjects);
+                ParseProject.CreateBuildFile(outFile, dependentProjects);
             }
             else
             {
