@@ -71,7 +71,7 @@ namespace Panel.Software.ListDependentProjects
                             string dependency = dllName;
 
                             // Project?
-                            if (!dllName.Equals("System", StringComparison.OrdinalIgnoreCase) 
+                            if (!dllName.Equals("System", StringComparison.OrdinalIgnoreCase)
                                 && !dllName.StartsWith("Microsoft.", StringComparison.OrdinalIgnoreCase)
                                 && !dllName.StartsWith("System.", StringComparison.OrdinalIgnoreCase))
                             {
@@ -90,7 +90,7 @@ namespace Panel.Software.ListDependentProjects
                                 }
                             }
 
-                            ErrorManager.DebugF("Adding reference '{0}'", dependency);                            
+                            ErrorManager.DebugF("Adding reference '{0}'", dependency);
                             _allReferences.Add(dependency);
                             break;
 
@@ -181,7 +181,7 @@ namespace Panel.Software.ListDependentProjects
                 return null;
             }
         }
-        
+
         #endregion
 
         #region Public Methods
@@ -195,7 +195,7 @@ namespace Panel.Software.ListDependentProjects
             try
             {
                 ErrorManager.DebugF("Parsing project '{0}' ...", projFile);
-                
+
                 _msbuildProj = new Project(projFile);
 
                 // Check cache. Only valid project files get into the cache.
@@ -268,7 +268,7 @@ namespace Panel.Software.ListDependentProjects
             }
 
             projName = NormalizeReferenceName(projName);
-            if (!projName.EndsWith("proj", StringComparison.OrdinalIgnoreCase))
+            if (!Path.GetExtension(projName).EndsWith("proj", StringComparison.OrdinalIgnoreCase))
             {
                 projName += ".*proj";
             }
@@ -320,46 +320,66 @@ namespace Panel.Software.ListDependentProjects
         /// </summary>
         private void ParseBuildProj()
         {
-            if(_msbuildProj == null)
+            try
             {
-                return;
-            }
-
-            // build.proj exists?
-            string buildProjFile = Path.Combine(Path.GetDirectoryName(_msbuildProj.FullPath), "build.proj");
-            if(!File.Exists(buildProjFile))
-            {
-                return;
-            }
-
-            // build.proj is newer than the project file?
-            if (File.GetLastWriteTime(buildProjFile) < File.GetLastWriteTime(_msbuildProj.FullPath))
-            {
-                return;
-            }
-
-            // Parse it!
-            _allReferences = new List<string>();
-            _projReferences = new List<string>();
-            Project buildProj = new Project(buildProjFile);
-            ProjectTargetInstance tgt = buildProj.Targets["Build"];
-            foreach(ProjectTaskInstance tsk in tgt.Tasks)
-            {
-                if(tsk.Name.Equals("MSBuild"))
+                if (_msbuildProj == null)
                 {
-                    if(tsk.Parameters.Keys.Contains("Projects"))
-                    {
-                        // Once a build.proj includes our project we know that subsequent project depend on us.
-                        string p = tsk.Parameters["Projects"];
-                        if(Path.GetFileName(p).Equals(Path.GetFileName(_msbuildProj.FullPath), StringComparison.OrdinalIgnoreCase))
-                        {
-                            break;
-                        }
+                    return;
+                }
 
-                        _allReferences.Add(p);
-                        AddProjectReference(p);
+                // build.proj exists?
+                string buildProjFile = Path.Combine(Path.GetDirectoryName(_msbuildProj.FullPath), "build.proj");
+                if (!File.Exists(buildProjFile))
+                {
+                    return;
+                }
+
+                // build.proj is newer than the project file?
+                if (File.GetLastWriteTime(buildProjFile) < File.GetLastWriteTime(_msbuildProj.FullPath))
+                {
+                    return;
+                }
+
+                // Parse it!
+                _allReferences = new List<string>();
+                _projReferences = new List<string>();
+                Project buildProj = new Project(buildProjFile);
+                ProjectTargetInstance tgt = buildProj.Targets["Build"];
+                if (tgt == null)
+                {
+                    return;
+                }
+
+                foreach (ProjectTaskInstance tsk in tgt.Tasks)
+                {
+                    if (tsk.Name.Equals("MSBuild"))
+                    {
+                        if (tsk.Parameters.Keys.Contains("Projects"))
+                        {
+                            // Once a build.proj includes our project we know that subsequent project depend on us.
+                            string p = tsk.Parameters["Projects"];
+                            if (Path.GetFileName(p).Equals(Path.GetFileName(_msbuildProj.FullPath), StringComparison.OrdinalIgnoreCase))
+                            {
+                                break;
+                            }
+
+                            _allReferences.Add(p);
+                            AddProjectReference(p);
+                            using (ParseProject po = new ParseProject(p))
+                            {
+                                _allReferences.AddRange(po.AllReferences);
+                                AddProjectReferences(po.ProjectReferences);
+                            }
+                        }
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                ErrorManager.DebugF("Failed parsing build.proj: {0}", ex.Message);
+                _allReferences = null;
+                _projReferences = null;
+                return;
             }
         }
 
@@ -487,9 +507,8 @@ namespace Panel.Software.ListDependentProjects
             proj.AddProperty("Configuration", "Release");
             proj.AddProperty("Platform", "x86");
 
-
             ProjectTargetElement trgt = proj.AddTarget("Build");
-            foreach(string p in projectList)
+            foreach (string p in projectList)
             {
                 ProjectTaskElement task = trgt.AddTask("MSBuild");
                 task.SetParameter("Projects", p);
