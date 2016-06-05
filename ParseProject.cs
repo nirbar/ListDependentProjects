@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.IO;
 using Microsoft.Build.Evaluation;
 using Microsoft.Build.Construction;
+using Microsoft.Build.Execution;
 
 namespace Panel.Software.ListDependentProjects
 {
@@ -43,6 +44,13 @@ namespace Panel.Software.ListDependentProjects
                 if (_myCache != null)
                 {
                     return _myCache.AllReferences;
+                }
+
+                // Valid build.proj file exists?
+                ParseBuildProj();
+                if (_allReferences != null)
+                {
+                    return _allReferences;
                 }
 
                 _allReferences = new List<string>();
@@ -304,6 +312,55 @@ namespace Panel.Software.ListDependentProjects
         private void AddError(string msg)
         {
             ErrorManager.Error(this.FullPath, msg);
+        }
+
+        /// <summary>
+        /// Parse a build.proj file, that already has all parsed dependent projects.
+        /// Initially checks that build.proj file exists and had a newer modification time compared to the project file.
+        /// </summary>
+        private void ParseBuildProj()
+        {
+            if(_msbuildProj == null)
+            {
+                return;
+            }
+
+            // build.proj exists?
+            string buildProjFile = Path.Combine(Path.GetDirectoryName(_msbuildProj.FullPath), "build.proj");
+            if(!File.Exists(buildProjFile))
+            {
+                return;
+            }
+
+            // build.proj is newer than the project file?
+            if (File.GetLastWriteTime(buildProjFile) < File.GetLastWriteTime(_msbuildProj.FullPath))
+            {
+                return;
+            }
+
+            // Parse it!
+            _allReferences = new List<string>();
+            _projReferences = new List<string>();
+            Project buildProj = new Project(buildProjFile);
+            ProjectTargetInstance tgt = buildProj.Targets["Build"];
+            foreach(ProjectTaskInstance tsk in tgt.Tasks)
+            {
+                if(tsk.Name.Equals("MSBuild"))
+                {
+                    if(tsk.Parameters.Keys.Contains("Projects"))
+                    {
+                        // Once a build.proj includes our project we know that subsequent project depend on us.
+                        string p = tsk.Parameters["Projects"];
+                        if(Path.GetFileName(p).Equals(Path.GetFileName(_msbuildProj.FullPath), StringComparison.OrdinalIgnoreCase))
+                        {
+                            break;
+                        }
+
+                        _allReferences.Add(p);
+                        AddProjectReference(p);
+                    }
+                }
+            }
         }
 
         #endregion
